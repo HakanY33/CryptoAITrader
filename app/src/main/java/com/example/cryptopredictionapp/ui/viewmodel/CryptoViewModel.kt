@@ -23,7 +23,7 @@ data class AnalysisState(
     val ema50: String = "...",
     val obStatus: String = "...",
     val fvgStatus: String = "...",
-    val trend: String = "Analiz Bekleniyor...", // Başlangıç metni değişti
+    val trend: String = "Analiz Bekleniyor...",
     val recommendation: String = "Veri Yok",
     val aiComment: String = "",
     val strategyScore: String = "0/6",

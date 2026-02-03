@@ -40,7 +40,18 @@ fun CryptoChart(
                 setPinchZoom(true)
                 isDragEnabled = true
                 setScaleEnabled(true)
-                setBackgroundColor(Color.parseColor("#121212")) // Koyu Arka Plan
+                // 1. ARKA PLANI ŞEFFAF YAP
+                setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                setGridBackgroundColor(android.graphics.Color.TRANSPARENT)
+                setDrawGridBackground(false)
+
+                // 2. KENARLIKLARI KALDIR (Sadece mumlar kalsın)
+                axisLeft.setDrawGridLines(false)
+                axisLeft.textColor = android.graphics.Color.WHITE // Yazılar beyaz olsun
+                xAxis.setDrawGridLines(false)
+                xAxis.textColor = android.graphics.Color.WHITE
+
+
             }
         },
         update = { chart ->

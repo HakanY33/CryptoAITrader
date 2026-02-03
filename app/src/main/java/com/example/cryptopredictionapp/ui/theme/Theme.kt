@@ -2,57 +2,58 @@ package com.example.cryptopredictionapp.ui.theme
 
 import android.app.Activity
 import android.os.Build
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
+// Sadece Dark Mode kullanacağız (Cyberpunk aydınlık olmaz!)
 private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80
-)
-
-private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40
-
-    /* Other default colors to override
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
-    onPrimary = Color.White,
+    primary = PrimaryNeon,
+    secondary = SecondaryNeon,
+    background = Color.Transparent, // Arka planı biz çizeceğiz
+    surface = Color.Transparent,    // Kartları biz cam yapacağız
+    onPrimary = Color.Black,
     onSecondary = Color.White,
-    onTertiary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    */
+    onBackground = TextWhite,
+    onSurface = TextWhite
 )
 
 @Composable
 fun CryptoPredictionAppTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = true,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
-    }
+    val colorScheme = DarkColorScheme
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = Typography,
-        content = content
+        typography = Typography, // Type.kt dosyan varsa oradan alır, yoksa default
+        content = {
+            // --- GLOBAL LIQUID BACKGROUND ---
+            // Tüm uygulamanın arkasına o "Mesh Gradient"i burada atıyoruz.
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                DeepViolet, // Üst kısım
+                                RoyalBlue,  // Orta kısım
+                                VoidBlack   // Alt kısım
+                            )
+                        )
+                    )
+            ) {
+                // İstersen buraya "RadialGradient" ile yüzen baloncuklar da ekleyebiliriz
+                // ama şimdilik performans için Linear Gradient yeterli.
+                content()
+            }
+        }
     )
 }

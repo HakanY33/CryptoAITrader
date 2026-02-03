@@ -28,7 +28,7 @@ interface BingxApi {
     @GET("openApi/swap/v2/quote/ticker")
     suspend fun getMarketScanData(): BingxMarketResponse
 
-    // --- YENİ EKLENEN BAKİYE SORGUSU ---
+
     @GET
     suspend fun getBalance(
         @Header("X-BX-APIKEY") apiKey: String,

@@ -11,7 +11,7 @@ import com.example.cryptopredictionapp.util.Constants
 import com.example.cryptopredictionapp.util.BingxSignatureUtils
 import java.math.BigDecimal
 import java.math.RoundingMode
-// Delay importunu sildik çünkü retry yapmayacağız
+
 
 class CryptoRepository {
 
@@ -30,7 +30,7 @@ class CryptoRepository {
         }
     }
 
-    // --- HATA VEREN YER DÜZELTİLDİ ---
+
     // Elvis Operatörü (?:) eklendi. Null gelirse "..." döner.
     suspend fun getMarketPrice(symbol: String): String {
         return try {

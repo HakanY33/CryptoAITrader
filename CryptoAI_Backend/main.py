@@ -5,7 +5,7 @@ import os
 
 # --- AYARLAR ---
 # Buraya Google AI Studio'dan aldığın key'i yapıştır
-GOOGLE_API_KEY = "yourapikey" 
+GOOGLE_API_KEY = "YourApiKey" 
 
 # Gemini'yi Ayarla
 genai.configure(api_key=GOOGLE_API_KEY)
@@ -30,7 +30,7 @@ def home():
 @app.post("/ask-ai")
 def ask_gemini(data: MarketData):
     try:
-        # --- SİHİRLİ PROMPT (SENİN STRATEJİN) ---
+        # --- SİHİRLİ PROMPT (STRATEJİ) ---
         prompt = f"""
         Rolün: Sen profesyonel, soğukkanlı ve matematiksel düşünen bir Kripto Vadeli İşlemler (Futures) Uzmanısın.
         
