@@ -35,11 +35,11 @@ class AutoTraderViewModel : ViewModel() {
     private val _losers = MutableStateFlow<List<BingxMarketItem>>(emptyList())
     val losers: StateFlow<List<BingxMarketItem>> = _losers.asStateFlow()
 
-    // Fırsatlar (Sadece Butona Basınca Güncellenir)
+    // Fırsatlar
     private val _opportunities = MutableStateFlow<List<TradeOpportunity>>(emptyList())
     val opportunities: StateFlow<List<TradeOpportunity>> = _opportunities.asStateFlow()
 
-    private val _isLoading = MutableStateFlow(false) // Sadece Analiz sırasında döner
+    private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     private val _statusMessage = MutableStateFlow("Piyasa Canlı Takip Ediliyor...")
@@ -56,23 +56,21 @@ class AutoTraderViewModel : ViewModel() {
         liveDataJob = viewModelScope.launch {
             while (isActive) {
                 try {
-                    // Sessizce veriyi çekip listeyi güncelle
-                    val result = repository.fetchTopMovers()
+                    // Limit artırıldı (repository içinde 20 olarak ayarlı)
+                    val result = repository.fetchTopMovers(limit = 20)
                     if (result.isNotEmpty()) {
                         _gainers.value = result["GAINERS"] ?: emptyList()
                         _losers.value = result["LOSERS"] ?: emptyList()
                     }
                 } catch (e: Exception) {
-                    // Sessiz hata (Kullanıcıyı rahatsız etme, bir sonraki turda düzelir)
                     e.printStackTrace()
                 }
-                // 3 Saniye bekle (Anlık hissi vermek için ideal)
                 delay(3000)
             }
         }
     }
 
-    // --- 2. ANALİZ TETİKLEYİCİ (Butonla Çalışır) ---
+    // --- 2. ANALİZ TETİKLEYİCİ (20 Fırsat Tarama) ---
     fun analyzeOpportunities() {
         if (_gainers.value.isEmpty()) return
 
@@ -81,16 +79,16 @@ class AutoTraderViewModel : ViewModel() {
             _statusMessage.value = "Fırsatlar Taranıyor..."
 
             val foundOpps = mutableListOf<TradeOpportunity>()
-            // Anlık listeden ilk 5'i al
-            val candidates = _gainers.value.take(5) + _losers.value.take(5)
+            // Daha geniş bir havuzdan seçim yap (İlk 10 Gainer + İlk 10 Loser)
+            val candidates = _gainers.value.take(10) + _losers.value.take(10)
 
             var processedCount = 0
             for (coin in candidates) {
                 processedCount++
-                _statusMessage.value = "Analiz: ${coin.symbol}..."
+                _statusMessage.value = "Analiz: ${coin.symbol} ($processedCount/20)..."
 
                 try {
-                    // Hacim Filtresi (>500k)
+                    // Hacim Filtresi
                     val volume = coin.quoteVolume?.toDoubleOrNull() ?: 0.0
                     if (volume < 500_000) continue
 
@@ -130,12 +128,12 @@ class AutoTraderViewModel : ViewModel() {
                             }
                         }
                     }
-                    delay(100) // API'yi boğmamak için minik bekleme
+                    delay(100) // API yükünü azaltmak için
                 } catch (e: Exception) { e.printStackTrace() }
             }
 
             _opportunities.value = foundOpps
-            _statusMessage.value = if (foundOpps.isNotEmpty()) "✅ ${foundOpps.size} Fırsat Bulundu (Liste Canlı)" else "Fırsat Bulunamadı (Liste Canlı)"
+            _statusMessage.value = if (foundOpps.isNotEmpty()) "✅ ${foundOpps.size} Fırsat Bulundu" else "Fırsat Bulunamadı"
             _isLoading.value = false
         }
     }
@@ -154,12 +152,37 @@ class AutoTraderViewModel : ViewModel() {
     }
 
     private fun parsePrice(text: String): Double {
-        val cleanText = text.split(" ")[0]
+        val cleanText = text.split(" ")[0].replace(",", ".")
         return cleanText.toDoubleOrNull() ?: 0.0
     }
 
     override fun onCleared() {
         super.onCleared()
         liveDataJob?.cancel()
+    }
+
+    // --- İŞLEM TETİKLEYİCİ ---
+    private val _tradeResult = MutableStateFlow<String?>(null)
+    val tradeResult: StateFlow<String?> = _tradeResult.asStateFlow()
+
+    fun executeTrade(opp: TradeOpportunity) {
+        viewModelScope.launch {
+            _tradeResult.value = "Kasa kontrol ediliyor ve işlem hesaplanıyor..."
+            val side = if (opp.type == "LONG") "BUY" else "SELL"
+
+            // GÜNCELLENMİŞ FONKSİYON (TP/SL DAHİL)
+            val result = repository.placeSmartTrade(
+                symbol = opp.symbol,
+                side = side,
+                price = opp.entryPrice,
+                leverage = 20, // Otomatik avcıda varsayılan 20x
+                tpPrice = opp.takeProfit,
+                slPrice = opp.stopLoss
+            )
+            _tradeResult.value = result
+
+            delay(5000)
+            _tradeResult.value = null
+        }
     }
 }

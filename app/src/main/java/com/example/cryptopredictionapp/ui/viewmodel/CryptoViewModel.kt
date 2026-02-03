@@ -11,6 +11,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
@@ -22,7 +23,7 @@ data class AnalysisState(
     val ema50: String = "...",
     val obStatus: String = "...",
     val fvgStatus: String = "...",
-    val trend: String = "Bekleniyor...",
+    val trend: String = "Analiz Bekleniyor...", // Başlangıç metni değişti
     val recommendation: String = "Veri Yok",
     val aiComment: String = "",
     val strategyScore: String = "0/6",
@@ -71,8 +72,10 @@ class CryptoViewModel : ViewModel() {
 
     init {
         loadCoinList()
-        // Uygulama açılır açılmaz BTC için canlı takibi başlat
-        startRealTimeUpdates("BTC-USDT")
+        // Uygulama açılır açılmaz BTC seçili gelir, analiz yapalım
+        analyzeMarket("BTC-USDT")
+        // Arka planda fiyat akışını başlatalım
+        startLightweightMonitoring()
     }
 
     // Tüm coin listesini API'den çeker
@@ -105,62 +108,70 @@ class CryptoViewModel : ViewModel() {
         _selectedSymbol.value = symbol
         _searchText.value = symbol
         _isSearching.value = false
-        // Seçilen coin için canlı takibi başlat
-        startRealTimeUpdates(symbol)
+
+        // Coin değişince tam analiz yap
+        analyzeMarket(symbol)
     }
 
     // Zaman dilimi (15m, 1h, 4h) değiştiğinde
     fun onTimeframeSelected(interval: String) {
         _selectedTimeframe.value = interval
-        // Yeni zaman dilimine göre grafiği ve analizi güncelle
-        startRealTimeUpdates(_selectedSymbol.value)
+        // Zaman dilimi değişince tam analiz yap
+        analyzeMarket(_selectedSymbol.value)
     }
 
-    // Manuel olarak "Analiz Et" butonuna basılırsa (Aslında otomatik ama yine de dursun)
-    fun analyzeMarket(symbol: String) {
-        startRealTimeUpdates(symbol)
-    }
-
-    // --- CANLI TAKİP MOTORU (BEYİN BURASI) ---
-    // Bu fonksiyon sürekli döngü halinde çalışır ve her 3 saniyede bir analiz yapar.
-    private fun startRealTimeUpdates(symbol: String) {
-        // Eğer önceki bir takip varsa durdur (Çakışma olmasın)
+    // --- 1. HAFİF MOD: SADECE FİYAT TAKİBİ (KASMA YAPMAZ) ---
+    private fun startLightweightMonitoring() {
         livePriceJob?.cancel()
-
         livePriceJob = viewModelScope.launch {
-            _isLoading.value = true // İlk başta yükleniyor göster
-
-            // Sonsuz döngü (Ekran kapanana kadar)
             while (isActive) {
-                val interval = _selectedTimeframe.value
+                try {
+                    // Sadece fiyatı çek (Ağır hesaplama yok)
+                    val priceStr = repository.getMarketPrice(_selectedSymbol.value)
 
-                // 1. Verileri Çek (Mumlar ve Anlık Fiyat)
+                    // Sadece fiyatı güncelle, diğer verilere dokunma
+                    _analysisState.update { it.copy(currentPrice = priceStr) }
+
+                } catch (e: Exception) {
+                    println("Fiyat akışı hatası: ${e.message}")
+                }
+                delay(2000) // 2 Saniyede bir fiyat güncelle
+            }
+        }
+    }
+
+    // --- 2. AĞIR MOD: DETAYLI ANALİZ (SADECE BUTONA BASINCA) ---
+    fun analyzeMarket(symbol: String) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _selectedSymbol.value = symbol
+
+            try {
+                // Mumları çek
+                val interval = _selectedTimeframe.value
                 val rawCandles = repository.getKlinesData(symbol, interval)
                 val currentTicker = repository.getCryptoPrice(symbol)
 
                 if (rawCandles.isNotEmpty() && currentTicker != null) {
                     // Verileri Matematiksel İşlem İçin Hazırla
-                    val candlesReversed = rawCandles.reversed() // Eskiden yeniye sırala
+                    val candlesReversed = rawCandles.reversed()
                     val closes = candlesReversed.map { BigDecimal(it.close) }
                     val highs = candlesReversed.map { BigDecimal(it.high) }
                     val lows = candlesReversed.map { BigDecimal(it.low) }
                     val volumes = candlesReversed.map { BigDecimal(it.volume) }
 
                     // --- 6 STRATEJİ OYLAMASI ---
-                    // Her indikatör bir oy kullanır: Long veya Short
                     var longVotes = 0
                     var shortVotes = 0
 
-                    // 1. STRATEJİ: EMA (Hareketli Ortalamalar)
-                    // Kısa vade (21), Uzun vadeyi (50) yukarı keserse AL
+                    // 1. STRATEJİ: EMA
                     val ema21 = IndicatorUtils.calculateEMA(closes, 21)
                     val ema50 = IndicatorUtils.calculateEMA(closes, 50)
                     if (ema21 != null && ema50 != null) {
                         if (ema21 > ema50) longVotes++ else shortVotes++
                     }
 
-                    // 2. STRATEJİ: ALLIGATOR (Williams Timsahı)
-                    // Timsahın ağzı yukarı açıksa AL, aşağı açıksa SAT
+                    // 2. STRATEJİ: ALLIGATOR
                     val alligator = IndicatorUtils.calculateAlligator(closes)
                     if (alligator != null) {
                         val (jaw, teeth, lips) = alligator
@@ -168,8 +179,7 @@ class CryptoViewModel : ViewModel() {
                         if (jaw > teeth && teeth > lips) shortVotes++
                     }
 
-                    // 3. STRATEJİ: MFI + CMF (Para Akışı)
-                    // Para girişi varsa AL, para çıkışı varsa SAT
+                    // 3. STRATEJİ: MFI + CMF
                     val mfi = IndicatorUtils.calculateMFI(highs, lows, closes, volumes)
                     val cmf = IndicatorUtils.calculateCMF(highs, lows, closes, volumes)
                     if (mfi != null && cmf != null) {
@@ -177,8 +187,7 @@ class CryptoViewModel : ViewModel() {
                         if (mfi < BigDecimal(50) && cmf < BigDecimal(-0.05)) shortVotes++
                     }
 
-                    // 4. STRATEJİ: AROON (Trend Gücü)
-                    // Yükseliş trendi güçlüyse AL
+                    // 4. STRATEJİ: AROON
                     val aroon = IndicatorUtils.calculateAroon(highs, lows)
                     if (aroon != null) {
                         val (up, down) = aroon
@@ -186,15 +195,13 @@ class CryptoViewModel : ViewModel() {
                         if (down > BigDecimal(70) && down > up) shortVotes++
                     }
 
-                    // 5. STRATEJİ: RSI (Aşırı Alım/Satım)
-                    // 50'nin üzerindeyse Trend Güçlü (AL)
+                    // 5. STRATEJİ: RSI
                     val rsi = IndicatorUtils.calculateRSI(closes)
                     if (rsi != null) {
                         if (rsi > BigDecimal(50)) longVotes++ else shortVotes++
                     }
 
-                    // 6. STRATEJİ: ADX + OBV (Trend ve Hacim Onayı)
-                    // Trend güçlüyse (ADX > 25) ve Hacim destekliyorsa (OBV)
+                    // 6. STRATEJİ: ADX + OBV
                     val adxData = IndicatorUtils.calculateADX(highs, lows, closes)
                     val obvData = IndicatorUtils.calculateOBV(closes, volumes)
                     if (adxData != null && obvData != null) {
@@ -206,16 +213,15 @@ class CryptoViewModel : ViewModel() {
                         }
                     }
 
-                    // --- SMC ANALİZİ (Order Block & FVG) ---
+                    // --- SMC ANALİZİ ---
                     val obStatus = TechnicalAnalysis.findOrderBlock(rawCandles)
                     val fvgStatus = TechnicalAnalysis.findFVG(rawCandles)
 
                     // --- GENEL TREND KARARI ---
                     var trendText = "YATAY / BELİRSİZ"
                     var signalText = "İşlem Açma (Bekle)"
-                    val scoreDisplay = "L:$longVotes / S:$shortVotes" // Ekranda skor gösterimi
+                    val scoreDisplay = "L:$longVotes / S:$shortVotes"
 
-                    // Eğer 6 stratejiden en az 4'ü aynı fikirdeyse Sinyal Üret
                     if (longVotes >= 4) {
                         trendText = "YÜKSELİŞ EĞİLİMİ 🟢"
                         signalText = "LONG Fırsatı (Skor: $longVotes/6)"
@@ -224,13 +230,12 @@ class CryptoViewModel : ViewModel() {
                         signalText = "SHORT Fırsatı (Skor: $shortVotes/6)"
                     }
 
-                    // --- AKILLI GİRİŞ (SMART SETUP) HESAPLA ---
+                    // --- AKILLI GİRİŞ HESAPLA ---
                     var entry = ""; var tp = ""; var sl = ""
                     val atr = IndicatorUtils.calculateATR(highs, lows, closes)
 
                     if (atr != null) {
                         val currentBigDec = BigDecimal(currentTicker.lastPrice)
-                        // Trende ve OB durumuna göre en iyi giriş yerini hesapla
                         val setup = TechnicalAnalysis.calculateSmartTradeSetup(
                             currentPrice = currentBigDec,
                             atr = atr,
@@ -243,7 +248,7 @@ class CryptoViewModel : ViewModel() {
                         sl = setup.third
                     }
 
-                    // 2. SONUÇLARI EKRANA BAS (State Güncelle)
+                    // SONUÇLARI GÜNCELLE
                     _analysisState.value = AnalysisState(
                         currentPrice = IndicatorUtils.formatPrice(BigDecimal(currentTicker.lastPrice)),
                         ema21 = IndicatorUtils.formatPrice(ema21),
@@ -253,19 +258,19 @@ class CryptoViewModel : ViewModel() {
                         trend = trendText,
                         recommendation = signalText,
                         strategyScore = scoreDisplay,
-                        aiComment = "", // AI yorumu sadece butona basınca gelir, burayı boş bırakıyoruz
+                        aiComment = "",
                         tradeEntry = entry,
                         tradeTp = tp,
                         tradeSl = sl,
-                        candles = rawCandles // Grafiği çizdirmek için mumları gönder
+                        candles = rawCandles
                     )
                 } else {
                     _analysisState.value = _analysisState.value.copy(recommendation = "Veri Alınamadı")
                 }
-
+            } catch (e: Exception) {
+                _analysisState.value = _analysisState.value.copy(recommendation = "Hata: ${e.message}")
+            } finally {
                 _isLoading.value = false
-                // 3 saniye bekle ve tekrar başa dön (Canlı Grafik Hissi)
-                delay(3000)
             }
         }
     }
@@ -273,10 +278,13 @@ class CryptoViewModel : ViewModel() {
     // Kullanıcı "Yapay Zeka Yorumla" butonuna basarsa
     fun askAiCurrentState(symbol: String) {
         val currentState = _analysisState.value
-        if (currentState.trend == "Bekleniyor...") return
+        // Eğer analiz yapılmadıysa önce analiz yap
+        if (currentState.trend == "Analiz Bekleniyor...") {
+            analyzeMarket(symbol)
+        }
 
         viewModelScope.launch {
-            _analysisState.value = currentState.copy(aiComment = "Yapay Zeka Stratejini İnceliyor... 🤖")
+            _analysisState.value = _analysisState.value.copy(aiComment = "Yapay Zeka Stratejini İnceliyor... 🤖")
             val request = MarketDataRequest(
                 symbol = symbol,
                 price = currentState.currentPrice,
@@ -291,9 +299,62 @@ class CryptoViewModel : ViewModel() {
         }
     }
 
-    // Ekran kapanırsa döngüyü durdur (Pil tasarrufu)
+    // Ekran kapanırsa döngüyü durdur
     override fun onCleared() {
         super.onCleared()
         livePriceJob?.cancel()
+    }
+
+    // --- İŞLEM YÖNETİMİ ---
+    private val _tradeResult = MutableStateFlow<String?>(null)
+    val tradeResult: StateFlow<String?> = _tradeResult.asStateFlow()
+
+    private val _userLeverage = MutableStateFlow(20f)
+    val userLeverage: StateFlow<Float> = _userLeverage.asStateFlow()
+
+    fun onLeverageChanged(value: Float) {
+        _userLeverage.value = value
+    }
+
+    // Metni Sayıya Çevir (Virgül/Nokta karmaşasını çözer)
+    private fun parsePrice(input: String): Double {
+        return try {
+            val cleanStr = input.replace(Regex("[^0-9.,]"), "")
+            val dotStr = cleanStr.replace(",", ".")
+            dotStr.toDoubleOrNull() ?: 0.0
+        } catch (e: Exception) {
+            0.0
+        }
+    }
+
+    fun executeMarketTrade(side: String, tpText: String, slText: String) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _tradeResult.value = "İşlem ve TP/SL Hazırlanıyor..."
+
+            val currentPrice = parsePrice(_analysisState.value.currentPrice)
+            val takeProfit = parsePrice(tpText)
+            val stopLoss = parsePrice(slText)
+
+            println("DEBUG: İşlem: $side, Fiyat: $currentPrice, TP: $takeProfit, SL: $stopLoss")
+
+            if (currentPrice > 0) {
+                val result = repository.placeSmartTrade(
+                    symbol = _selectedSymbol.value,
+                    side = side,
+                    price = currentPrice,
+                    leverage = _userLeverage.value.toInt(),
+                    tpPrice = takeProfit,
+                    slPrice = stopLoss
+                )
+                _tradeResult.value = result
+            } else {
+                _tradeResult.value = "❌ Fiyat verisi alınamadı!"
+            }
+
+            delay(4000)
+            _tradeResult.value = null
+            _isLoading.value = false
+        }
     }
 }
