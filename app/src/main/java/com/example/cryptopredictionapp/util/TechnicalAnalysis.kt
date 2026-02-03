@@ -3,195 +3,143 @@ package com.example.cryptopredictionapp.util
 import com.example.cryptopredictionapp.data.model.BingxKlineData
 import java.math.BigDecimal
 import java.math.RoundingMode
-import kotlin.math.abs
 
 object TechnicalAnalysis {
 
-    // --- FAIR VALUE GAP (FVG) BULUCU ---
-    // Son 200 mumu tarar, test edilmemiş (açık) en yakın FVG'yi bulur.
+    // --- FVG BULUCU (AYNI KALDI) ---
     fun findFVG(candles: List<BingxKlineData>): String {
         if (candles.size < 50) return "Veri Az"
-
-        // Mumları Eskiden -> Yeniye sıralı varsayıyoruz (API genelde böyle verir)
-        // Ama işleme kolaylığı için ters çevirelim (Index 0 = En Son Mum)
         val reversedCandles = candles.reversed()
-        val currentPrice = BigDecimal(reversedCandles[0].close)
-
-        // Aktif (Test edilmemiş) FVG'leri tutacak listeler
         var bullishFvg: String? = null
         var bearishFvg: String? = null
 
-        // Son 50 muma bakmak genelde yeterlidir (fazlası çok eski olur)
         for (i in 1 until 50) {
-            // FVG için en az 3 mum lazım: i (son), i+1 (orta), i+2 (ilk)
             if (i + 2 >= reversedCandles.size) break
+            val c1 = reversedCandles[i + 2]; val c3 = reversedCandles[i]
+            val high1 = BigDecimal(c1.high); val low1 = BigDecimal(c1.low)
+            val high3 = BigDecimal(c3.high); val low3 = BigDecimal(c3.low)
 
-            val candle1 = reversedCandles[i + 2] // Sol
-            val candle2 = reversedCandles[i + 1] // Orta (FVG'yi oluşturan hareket)
-            val candle3 = reversedCandles[i]     // Sağ
-
-            val high1 = BigDecimal(candle1.high)
-            val low1 = BigDecimal(candle1.low)
-            val high3 = BigDecimal(candle3.high)
-            val low3 = BigDecimal(candle3.low)
-
-            // --- BULLISH FVG (Yükseliş Boşluğu) ---
-            // Kural: 1. mumun yükseği < 3. mumun düşüğü
+            // Bullish FVG
             if (low3 > high1) {
-                // Bu boşluk daha sonraki mumlar (i-1, i-2... 0) tarafından dolduruldu mu?
-                var isMitigated = false
-                for (j in 0 until i) {
-                    val futureLow = BigDecimal(reversedCandles[j].low)
-                    // Eğer gelecek mumların iğnesi, boşluğun içine girdiyse "Mitigated" sayılır
-                    if (futureLow <= high1) {
-                        isMitigated = true
-                        break
-                    }
-                }
-
-                if (!isMitigated) {
-                    // Bulduk! Fiyat buraya geri çekilirse LONG fırsatıdır.
-                    // Format: "FVG: 68100 - 68500"
+                var mitigated = false
+                for (j in 0 until i) if (BigDecimal(reversedCandles[j].low) <= high1) mitigated = true
+                if (!mitigated) {
                     bullishFvg = "${IndicatorUtils.formatPrice(high1)} - ${IndicatorUtils.formatPrice(low3)}"
-                    // En yakın olanı bulduğumuz an döngüden çıkmıyoruz,
-                    // ama genelde en son oluşan (i en küçük olan) en önemlisidir.
-                    // Biz ilk bulduğumuzu (en güncelini) alıp çıkabiliriz.
-                    if (bullishFvg != null) break
+                    break
                 }
             }
-
-            // --- BEARISH FVG (Düşüş Boşluğu) ---
-            // Kural: 1. mumun düşüğü > 3. mumun yükseği
+            // Bearish FVG
             if (high3 < low1) {
-                var isMitigated = false
-                for (j in 0 until i) {
-                    val futureHigh = BigDecimal(reversedCandles[j].high)
-                    if (futureHigh >= low1) {
-                        isMitigated = true
-                        break
-                    }
-                }
-
-                if (!isMitigated) {
+                var mitigated = false
+                for (j in 0 until i) if (BigDecimal(reversedCandles[j].high) >= low1) mitigated = true
+                if (!mitigated) {
                     bearishFvg = "${IndicatorUtils.formatPrice(high3)} - ${IndicatorUtils.formatPrice(low1)}"
-                    if (bearishFvg != null) break
+                    break
                 }
             }
         }
-
-        // Karar Anı: Fiyata hangisi yakınsa veya trende göre mantıklı olanı döndür
         return when {
-            bullishFvg != null && bearishFvg != null -> "Bull: $bullishFvg / Bear: $bearishFvg"
-            bullishFvg != null -> "Bullish FVG: $bullishFvg 🟢"
-            bearishFvg != null -> "Bearish FVG: $bearishFvg 🔴"
+            bullishFvg != null -> "Bull FVG: $bullishFvg"
+            bearishFvg != null -> "Bear FVG: $bearishFvg"
             else -> "Açık FVG Yok"
         }
     }
 
-    // --- ORDER BLOCK (OB) BULUCU ---
-    // Son düşüşten önceki son yeşil mum (Bearish OB) veya son yükselişten önceki son kırmızı mum (Bullish OB)
+    // --- OB BULUCU (GÜNCELLENDİ: FİYATI DA DÖNDÜRÜYORUZ) ---
+    // Artık sadece String değil, hesaplama yapmak için Pair(String, BigDecimal?) döndüreceğiz.
+    // Ancak yapıyı bozmamak için String döndürüp fiyatı setup içinde parse edeceğiz (Daha güvenli).
     fun findOrderBlock(candles: List<BingxKlineData>): String {
         if (candles.size < 50) return "Veri Az"
-
         val reversedCandles = candles.reversed()
-        val currentPrice = BigDecimal(reversedCandles[0].close)
-
-        var bullishOB: String? = null
-        var bearishOB: String? = null
-
-        // Basitleştirilmiş Algoritma: Swing noktalarını bulmak zordur,
-        // bu yüzden sert hareketleri (Marubozu veya uzun mumları) referans alacağız.
 
         for (i in 1 until 50) {
-            val current = reversedCandles[i]
-            val prev = reversedCandles[i+1] // OB adayı
+            val current = reversedCandles[i]; val prev = reversedCandles[i+1]
+            val cClose = BigDecimal(current.close); val cOpen = BigDecimal(current.open)
+            val pOpen = BigDecimal(prev.open); val pClose = BigDecimal(prev.close)
+            val pHigh = BigDecimal(prev.high); val pLow = BigDecimal(prev.low)
 
-            val cOpen = BigDecimal(current.open)
-            val cClose = BigDecimal(current.close)
-            val pOpen = BigDecimal(prev.open)
-            val pClose = BigDecimal(prev.close)
-            val pHigh = BigDecimal(prev.high)
-            val pLow = BigDecimal(prev.low)
+            val body = (cClose.subtract(cOpen)).abs()
+            val prevBody = (pClose.subtract(pOpen)).abs()
 
-            // Hareketin büyüklüğü (ATR mantığı basitçe)
-            val bodySize = (cClose.subtract(cOpen)).abs()
-            val prevBodySize = (pClose.subtract(pOpen)).abs()
-
-            // --- BULLISH OB ARAYIŞI ---
-            // Sert bir yükseliş mumu (Yeşil) gördük. Ondan önceki mum Kırmızı mıydı?
-            if (cClose > cOpen && bodySize > prevBodySize * BigDecimal(1.5)) {
-                if (pClose < pOpen) { // Önceki mum Kırmızı
-                    // Bu bölge test edildi mi? (Fiyat pHigh altına indi mi?)
-                    var isMitigated = false
-                    for (j in 0 until i) {
-                        if (BigDecimal(reversedCandles[j].low) < pHigh) {
-                            isMitigated = true // Basitçe: Fiyat oraya dokunduysa iptal et (Test edildi)
-                            break
-                        }
-                    }
-                    if (!isMitigated) {
-                        bullishOB = "${IndicatorUtils.formatPrice(pLow)} - ${IndicatorUtils.formatPrice(pHigh)}"
-                        break // En güncelini bulduk
-                    }
+            // Bullish OB (Düşüş mumunu yutan yükseliş)
+            if (cClose > cOpen && body > prevBody) {
+                if (pClose < pOpen) { // Önceki Kırmızı
+                    var mitigated = false
+                    for (j in 0 until i) if (BigDecimal(reversedCandles[j].low) < pHigh) mitigated = true
+                    if (!mitigated) return "Bull OB: ${IndicatorUtils.formatPrice(pHigh)}" // Giriş yeri: OB'nin tepesi
                 }
             }
-
-            // --- BEARISH OB ARAYIŞI ---
-            // Sert bir düşüş mumu (Kırmızı) gördük. Ondan önceki mum Yeşil miydi?
-            if (cClose < cOpen && bodySize > prevBodySize * BigDecimal(1.5)) {
-                if (pClose > pOpen) { // Önceki mum Yeşil
-                    var isMitigated = false
-                    for (j in 0 until i) {
-                        if (BigDecimal(reversedCandles[j].high) > pLow) {
-                            isMitigated = true
-                            break
-                        }
-                    }
-                    if (!isMitigated) {
-                        bearishOB = "${IndicatorUtils.formatPrice(pLow)} - ${IndicatorUtils.formatPrice(pHigh)}"
-                        break
-                    }
+            // Bearish OB
+            if (cClose < cOpen && body > prevBody) {
+                if (pClose > pOpen) { // Önceki Yeşil
+                    var mitigated = false
+                    for (j in 0 until i) if (BigDecimal(reversedCandles[j].high) > pLow) mitigated = true
+                    if (!mitigated) return "Bear OB: ${IndicatorUtils.formatPrice(pLow)}" // Giriş yeri: OB'nin altı
                 }
             }
         }
-
-        return when {
-            bullishOB != null && bearishOB != null -> "Bull: $bullishOB / Bear: $bearishOB"
-            bullishOB != null -> "Bullish OB: $bullishOB 🟢"
-            bearishOB != null -> "Bearish OB: $bearishOB 🔴"
-            else -> "Yakın OB Yok"
-        }
+        return "Yakın OB Yok"
     }
 
-    // --- TP / SL HESAPLAYICI (Sniper Setup) ---
-    fun calculateTradeSetup(
+    // --- AKILLI TRADE SETUP (SNIPER MODU) ---
+    fun calculateSmartTradeSetup(
         currentPrice: BigDecimal,
         atr: BigDecimal,
-        trend: String
-    ): Triple<String, String, String> {
-        // Strateji:
-        // Stop Loss = ATR * 2 (Gürültüden kaçmak için)
-        // Take Profit = ATR * 5 (1'e 2.5 Risk/Ödül oranı)
+        trend: String,
+        obString: String,  // OB bilgisini alıyoruz
+        fvgString: String  // FVG bilgisini alıyoruz
+    ): Triple<String, String, String> { // Entry, TP, SL
 
+        var entryPrice = currentPrice
+        var entryReason = "(Market)" // Ekranda göstermek için
+
+        // 1. GİRİŞ YERİNİ İYİLEŞTİRME (Smart Entry)
+        // Eğer Trend Yükselişse ve elimizde Bullish OB varsa, girişi oraya çek.
+        if (trend.contains("YÜKSELİŞ") || trend.contains("LONG")) {
+            if (obString.contains("Bull OB:")) {
+                // String içinden fiyatı çekiyoruz: "Bull OB: 65000.50" -> 65000.50
+                val obPriceStr = obString.substringAfter("Bull OB:").trim()
+                val obPrice = obPriceStr.toBigDecimalOrNull()
+
+                // Eğer OB fiyatı şu anki fiyatın altındaysa (yani geri çekilme bekleniyorsa)
+                if (obPrice != null && obPrice < currentPrice) {
+                    entryPrice = obPrice
+                    entryReason = "(Limit: OB)"
+                }
+            }
+        }
+        // Short Mantığı
+        else if (trend.contains("DÜŞÜŞ") || trend.contains("SHORT")) {
+            if (obString.contains("Bear OB:")) {
+                val obPriceStr = obString.substringAfter("Bear OB:").trim()
+                val obPrice = obPriceStr.toBigDecimalOrNull()
+
+                if (obPrice != null && obPrice > currentPrice) {
+                    entryPrice = obPrice
+                    entryReason = "(Limit: OB)"
+                }
+            }
+        }
+
+        // 2. TP / SL HESAPLAMA (ATR Bazlı)
+        // Stop Loss: Girişten 2 ATR uzaklıkta
+        // Take Profit: Girişten 4 ATR uzaklıkta (Risk/Reward 1:2)
         val slDist = atr.multiply(BigDecimal(2))
-        val tpDist = atr.multiply(BigDecimal(5))
+        val tpDist = atr.multiply(BigDecimal(4))
 
         val stopLoss: BigDecimal
         val takeProfit: BigDecimal
-        val entryPrice = currentPrice // Şimdilik market giriş, limit emir için OB kullanılabilir
 
-        if (trend.contains("YÜKSELİŞ")) {
-            // Long Setup
+        if (trend.contains("YÜKSELİŞ") || trend.contains("LONG")) {
             stopLoss = entryPrice.subtract(slDist)
             takeProfit = entryPrice.add(tpDist)
         } else {
-            // Short Setup
             stopLoss = entryPrice.add(slDist)
             takeProfit = entryPrice.subtract(tpDist)
         }
 
         return Triple(
-            IndicatorUtils.formatPrice(entryPrice),
+            "${IndicatorUtils.formatPrice(entryPrice)} $entryReason",
             IndicatorUtils.formatPrice(takeProfit),
             IndicatorUtils.formatPrice(stopLoss)
         )

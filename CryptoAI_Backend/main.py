@@ -5,7 +5,7 @@ import os
 
 # --- AYARLAR ---
 # Buraya Google AI Studio'dan aldığın key'i yapıştır
-GOOGLE_API_KEY = "YourAPiKey" 
+GOOGLE_API_KEY = "YourApiKey" 
 
 # Gemini'yi Ayarla
 genai.configure(api_key=GOOGLE_API_KEY)
