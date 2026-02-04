@@ -4,7 +4,7 @@ import google.generativeai as genai
 import os
 
 # --- AYARLAR ---
-# Buraya Google AI Studio'dan aldığın key'i yapıştır
+# API Key'ini buraya yapıştır
 GOOGLE_API_KEY = "YourApiKey" 
 
 # Gemini'yi Ayarla
@@ -13,59 +13,72 @@ model = genai.GenerativeModel('models/gemini-flash-latest')
 
 app = FastAPI()
 
-# Android'den gelecek veri paketi
+# --- GÜNCELLENMİŞ VERİ PAKETİ ---
+# Android'deki "Money Printer" stratejisinden gelen tüm verileri buraya ekledik
 class MarketData(BaseModel):
     symbol: str       # Ör: BTC-USDT
     price: str        # Ör: 97500.50
-    ema21: str        # Ör: 97400
-    ema50: str        # Ör: 97600
-    trend: str        # Ör: YÜKSELİŞ
+    trend: str        # Ör: YÜKSELİŞ EĞİLİMİ (EMA 200 Filtresi)
+    rsi_status: str   # Ör: RSI: 45 (Nötr)
     ob_status: str    # Ör: Bullish OB Var
     fvg_status: str   # Ör: FVG Yok
+    setup_entry: str  # Ör: 97200 (Trend Desteği)
+    setup_tp: str     # Ör: 98500
+    setup_sl: str     # Ör: 96800
 
 @app.get("/")
 def home():
-    return {"message": "Crypto AI Backend Çalışıyor!"}
+    return {"message": "Crypto AI Trader V2.0 Backend Çalışıyor!"}
 
 @app.post("/ask-ai")
 def ask_gemini(data: MarketData):
     try:
-        # --- SİHİRLİ PROMPT (STRATEJİ) ---
+        # --- YENİ HYBRID MONEY PRINTER PROMPTU ---
         prompt = f"""
-        Rolün: Sen profesyonel, soğukkanlı ve matematiksel düşünen bir Kripto Vadeli İşlemler (Futures) Uzmanısın.
+        ROLÜN:
+        Sen "Crypto AI Trader" adlı gelişmiş bir algoritmik trade sisteminin Baş Analistisin. 
+        Sistemin "Universal Money Printer (Hybrid)" adlı motoru kullanıyor.
         
-        KULLANICI PROFİLİ:
-        - Stil: Agresif Scalper / Day Trader.
-        - Strateji: Yüksek Kaldıraç (100x), Düşük Marj. Stop Loss yerine DCA (Kademeli Ekleme) ve Likidite Yönetimi.
-        - Terimler: Asla "Al" veya "Sat" deme. Daima "LONG İşlem", "SHORT İşlem", "Pozisyon Kapat", "Ekleme Yap" terimlerini kullan.
+        ALGORİTMA MANTIĞI (Bunu bilerek yorumla):
+        1. Trend Filtresi: Fiyat EMA 200 üzerindeyse sadece LONG, altındaysa sadece SHORT bakar.
+        2. Sinyal: Smoothed RSI momentumu ve SMC (Order Block/FVG) yapılarını teyit eder.
+        3. Risk Yönetimi: ATR bazlı dinamik Stop Loss kullanır. Asla stopsuz işlem açmaz.
 
-        PİYASA VERİLERİ:
+        ANALİZ EDİLECEK VERİLER:
         - Parite: {data.symbol}
-        - Fiyat: {data.price}
-        - EMA 21/50: {data.ema21} / {data.ema50}
-        - Teknik Trend: {data.trend} (Bu trend 6 farklı indikatörün oylaması sonucu çıktı)
-        - SMC (Smart Money): {data.ob_status} ve {data.fvg_status}
+        - Anlık Fiyat: {data.price}
+        - Algoritma Trend Tespiti: {data.trend}
+        - SMC Yapısı: {data.ob_status} | {data.fvg_status}
+        - RSI Durumu: {data.rsi_status}
+        
+        ALGORİTMANIN ÖNERDİĞİ SETUP:
+        - Giriş: {data.setup_entry}
+        - Hedef (TP): {data.setup_tp}
+        - Stop (SL): {data.setup_sl}
 
         GÖREVİN:
-        Bu verilere dayanarak net bir işlem planı kur.
-        1. Yön ne olmalı? (Long mu Short mu yoksa İşlem Yok mu?)
-        2. Nereden girmeli? (Örn: FVG bölgesinden veya EMA testinden)
-        3. Risk uyarısı yapma, sadece stratejiye odaklan.
+        Algoritmanın teknik çıktısını bir "İnsan Uzman" gözüyle süzgeçten geçir ve kullanıcıya güven ver.
         
-        Cevabın kısa, Türkçe ve profesyonel trader ağzıyla olsun.
+        1. **Setup Kalitesi:** Algoritmanın verdiği Entry/TP/SL mantıklı mı? (Örn: Trend yönünde mi?)
+        2. **SMC Teyidi:** Order Block veya FVG bu işlemi destekliyor mu?
+        3. **Yatırımcı Psikolojisi:** Kullanıcıya disiplinli olmasını, ATR stopuna sadık kalmasını hatırlat.
+        
+        KURALLAR:
+        - Asla "Yatırım tavsiyesidir" deme.
+        - Tonun: Profesyonel, Analitik, Güven Veren ve Kısa.
+        - Emoji kullanımı: Minimum ve yerinde (Örn: 🚀, 🛑).
+        - Cevabın maksimum 3-4 cümle olsun. Uzatma.
+
         """
 
         # Gemini'ye sor
         response = model.generate_content(prompt)
         
-        # Cevabı Android'e gönder
         return {"ai_response": response.text}
 
     except Exception as e:
         return {"ai_response": f"Hata oluştu: {str(e)}"}
 
-# Bu dosya direkt çalıştırılırsa sunucuyu başlat
 if __name__ == "__main__":
     import uvicorn
-    # host="0.0.0.0" demek, ağdaki diğer cihazlar (Android Emulator) erişebilir demek.
     uvicorn.run(app, host="0.0.0.0", port=8000)

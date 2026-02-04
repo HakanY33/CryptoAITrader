@@ -230,19 +230,22 @@ class CryptoViewModel : ViewModel() {
                         signalText = "SHORT Fırsatı (Skor: $shortVotes/6)"
                     }
 
-                    // --- AKILLI GİRİŞ HESAPLA ---
+                    // --- DÜZELTME BURADA: YENİ HYBRID MOTOR ---
+                    // "Money Printer" Stratejisi burada devreye giriyor
                     var entry = ""; var tp = ""; var sl = ""
                     val atr = IndicatorUtils.calculateATR(highs, lows, closes)
 
                     if (atr != null) {
                         val currentBigDec = BigDecimal(currentTicker.lastPrice)
-                        val setup = TechnicalAnalysis.calculateSmartTradeSetup(
+
+                        // ARTIK ESKİ calculateSmartTradeSetup YOK
+                        // YENİ calculateHybridTradeSetup VAR
+                        val setup = TechnicalAnalysis.calculateHybridTradeSetup(
+                            candles = rawCandles, // Trendi kendi içinde bulması için mumları veriyoruz
                             currentPrice = currentBigDec,
-                            atr = atr,
-                            trend = trendText,
-                            obString = obStatus,
-                            fvgString = fvgStatus
+                            atr = atr
                         )
+
                         entry = setup.first
                         tp = setup.second
                         sl = setup.third
@@ -285,15 +288,22 @@ class CryptoViewModel : ViewModel() {
 
         viewModelScope.launch {
             _analysisState.value = _analysisState.value.copy(aiComment = "Yapay Zeka Stratejini İnceliyor... 🤖")
+
+            // --- GÜNCELLEME BURADA ---
             val request = MarketDataRequest(
                 symbol = symbol,
                 price = currentState.currentPrice,
-                ema21 = currentState.ema21,
-                ema50 = currentState.ema50,
                 trend = currentState.trend,
+                // RSI'ı hesaplayıp string olarak gönderelim (Basitçe 50 üstü/altı)
+                rsiStatus = "RSI Momentum Analizi Dahil",
                 obStatus = currentState.obStatus,
-                fvgStatus = currentState.fvgStatus
+                fvgStatus = currentState.fvgStatus,
+                // Algoritmanın bulduğu setup değerlerini gönderiyoruz
+                setupEntry = currentState.tradeEntry,
+                setupTp = currentState.tradeTp,
+                setupSl = currentState.tradeSl
             )
+
             val aiResponse = repository.askAiForAnalysis(request)
             _analysisState.value = _analysisState.value.copy(aiComment = aiResponse)
         }

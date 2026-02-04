@@ -115,12 +115,42 @@ class AutoTraderViewModel : ViewModel() {
                             var finalSl = price * 0.99
 
                             if (atr != null) {
-                                val setup = TechnicalAnalysis.calculateSmartTradeSetup(
-                                    BigDecimal(price), atr, type, obText, fvgText
+                                // --- DÜZELTME: Yeni "Hybrid Money Printer" Stratejisine Geçiş ---
+                                // Eski fonksiyon: calculateSmartTradeSetup(price, atr, type...) -> ARTIK YOK
+                                // Yeni fonksiyon: calculateHybridTradeSetup(candles, price, atr)
+
+                                val setup = TechnicalAnalysis.calculateHybridTradeSetup(
+                                    candles,
+                                    BigDecimal(price),
+                                    atr
                                 )
-                                finalEntry = parsePrice(setup.first)
-                                finalTp = parsePrice(setup.second)
-                                finalSl = parsePrice(setup.third)
+
+                                // Eğer strateji "İşlem Yok", "Bekle" veya "Veri Yetersiz" dediyse listeye ekleme
+                                val entryText = setup.first
+                                if (!entryText.contains("Bekle") && !entryText.contains("Yetersiz") && !entryText.contains("İşlem Yok")) {
+
+                                    // String içinden saf fiyatı ayıklama (Örn: "65000.50 (Trend Desteği)" -> 65000.50)
+                                    // Parse işlemi basitçe boşluktan öncesini alır
+                                    val cleanEntry = entryText.split(" ").firstOrNull()?.replace(",", ".")?.toDoubleOrNull() ?: price
+                                    val cleanTp = setup.second.replace(",", ".").toDoubleOrNull() ?: 0.0
+                                    val cleanSl = setup.third.replace(",", ".").toDoubleOrNull() ?: 0.0
+
+                                    // Yönü (LONG/SHORT) Hedefe göre otomatik belirle
+                                    val signalType = if (cleanTp > cleanEntry) "LONG" else "SHORT"
+
+                                    if (cleanTp > 0 && cleanSl > 0) {
+                                        foundOpps.add(
+                                            TradeOpportunity(
+                                                symbol = coin.symbol,
+                                                type = signalType,
+                                                entryPrice = cleanEntry,
+                                                takeProfit = cleanTp,
+                                                stopLoss = cleanSl,
+                                                score = 90 // Strateji onayladığı için yüksek skor
+                                            )
+                                        )
+                                    }
+                                }
                             }
 
                             if (price > 0) {

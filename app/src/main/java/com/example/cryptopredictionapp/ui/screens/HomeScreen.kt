@@ -21,11 +21,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.example.cryptopredictionapp.ui.components.CryptoChart
-import com.example.cryptopredictionapp.ui.components.glassEffect // Yeni GlassModifier'ımız
+// DİKKAT: GlassComponents.kt dosyası ui/components altında olmalı
+import com.example.cryptopredictionapp.ui.components.glassEffect
 import com.example.cryptopredictionapp.ui.theme.*
 import com.example.cryptopredictionapp.ui.viewmodel.CryptoViewModel
 
@@ -78,12 +80,11 @@ fun HomeScreen(viewModel: CryptoViewModel) {
                 text = "AI Crypto Analyzer",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.ExtraBold,
-                color = TextWhite // Color.kt'den geliyor
+                color = TextWhite
             )
         }
 
         // --- 2. GLASS SEARCH BAR ---
-        // Standart OutlinedTextField yerine GlassBox içine TextField koyuyoruz
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -97,11 +98,11 @@ fun HomeScreen(viewModel: CryptoViewModel) {
                 placeholder = { Text("Coin Ara (Ör: ETH)", color = TextGray) },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color.Transparent), // Arkaplan şeffaf, cam görünsün
+                    .background(Color.Transparent),
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = Color.Transparent,
                     unfocusedContainerColor = Color.Transparent,
-                    focusedIndicatorColor = Color.Transparent, // Çizgileri kaldır
+                    focusedIndicatorColor = Color.Transparent,
                     unfocusedIndicatorColor = Color.Transparent,
                     cursorColor = AcidGreen,
                     focusedTextColor = TextWhite,
@@ -126,11 +127,11 @@ fun HomeScreen(viewModel: CryptoViewModel) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 4.dp)
-                    .zIndex(20f) // Search bar'ın da üstünde
-                    .glassEffect(cornerRadius = 12.dp, opacity = 0.9f) // Daha opak cam
+                    .zIndex(20f)
+                    .glassEffect(cornerRadius = 12.dp, opacity = 0.9f)
             ) {
                 Column(modifier = Modifier.padding(8.dp)) {
-                    filteredCoins.take(5).forEach { coin -> // Max 5 sonuç gösterelim
+                    filteredCoins.take(5).forEach { coin ->
                         Text(
                             text = coin,
                             modifier = Modifier
@@ -155,11 +156,11 @@ fun HomeScreen(viewModel: CryptoViewModel) {
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // --- ZAMAN SEÇİCİ (Segmented Look) ---
+            // --- ZAMAN SEÇİCİ ---
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .glassEffect(cornerRadius = 50.dp, opacity = 0.05f) // İnce bir bar
+                    .glassEffect(cornerRadius = 50.dp, opacity = 0.05f)
                     .padding(4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
@@ -185,17 +186,16 @@ fun HomeScreen(viewModel: CryptoViewModel) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // --- CHART AREA (Glass Card) ---
+            // --- CHART AREA ---
             if (analysis.candles.isNotEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(300.dp)
-                        .glassEffect() // SİHİRLİ DOKUNUŞ
+                        .glassEffect()
                         .padding(8.dp)
                 ) {
                     Column {
-                        // Chart Başlığı
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -214,14 +214,13 @@ fun HomeScreen(viewModel: CryptoViewModel) {
                                 fontSize = 18.sp
                             )
                         }
-                        // Grafik Bileşeni
                         CryptoChart(candles = analysis.candles, analysisState = analysis)
                     }
                 }
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
-            // --- SNIPER SETUP (Wide Glass Card) ---
+            // --- SNIPER SETUP (GÜNCELLENMİŞ: 3 EŞİT SÜTUN) ---
             if (analysis.tradeTp.isNotEmpty()) {
                 Box(modifier = Modifier.fillMaxWidth().glassEffect()) {
                     Column(modifier = Modifier.padding(16.dp)) {
@@ -233,32 +232,43 @@ fun HomeScreen(viewModel: CryptoViewModel) {
                             modifier = Modifier.align(Alignment.CenterHorizontally)
                         )
                         Spacer(modifier = Modifier.height(12.dp))
+
+                        // DÜZELTME: Row içindeki elemanlara 'weight(1f)' vererek eşit böldük
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.Top
                         ) {
-                            // Entry (Beyaz)
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("Giriş", color = TextGray, fontSize = 11.sp)
-                                Text(analysis.tradeEntry, color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            }
-                            // TP (Yeşil)
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("Hedef (TP)", color = TextGray, fontSize = 11.sp)
-                                Text(analysis.tradeTp, color = AcidGreen, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            }
-                            // SL (Magenta/Kırmızı)
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("Stop (SL)", color = TextGray, fontSize = 11.sp)
-                                Text(analysis.tradeSl, color = NeonMagenta, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            }
+                            // 1. Sütun: GİRİŞ (Uzun yazı aşağı kayacak)
+                            InfoColumn(
+                                title = "Giriş",
+                                value = analysis.tradeEntry,
+                                color = TextWhite,
+                                modifier = Modifier.weight(1f) // %33 Alan
+                            )
+
+                            // 2. Sütun: TP
+                            InfoColumn(
+                                title = "Hedef (TP)",
+                                value = analysis.tradeTp,
+                                color = AcidGreen,
+                                modifier = Modifier.weight(1f) // %33 Alan
+                            )
+
+                            // 3. Sütun: SL
+                            InfoColumn(
+                                title = "Stop (SL)",
+                                value = analysis.tradeSl,
+                                color = NeonMagenta,
+                                modifier = Modifier.weight(1f) // %33 Alan
+                            )
                         }
                     }
                 }
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
-            // --- AI INTELLIGENCE (Glowing Border) ---
+            // --- AI INTELLIGENCE ---
             if (analysis.aiComment.isNotEmpty()) {
                 Box(
                     modifier = Modifier
@@ -270,7 +280,6 @@ fun HomeScreen(viewModel: CryptoViewModel) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("🤖 Gemini AI", fontWeight = FontWeight.Bold, color = ElectricPurple)
                             Spacer(modifier = Modifier.weight(1f))
-                            // Güven Skoru (Confidence) yok (Şimdilik)
                             Text("", color = AcidGreen, fontSize = 12.sp)
                         }
                         Spacer(modifier = Modifier.height(8.dp))
@@ -283,7 +292,6 @@ fun HomeScreen(viewModel: CryptoViewModel) {
                 }
                 Spacer(modifier = Modifier.height(16.dp))
             } else {
-                // AI Bekleniyor Butonu (Eğer yorum yoksa)
                 Button(
                     onClick = { viewModel.askAiCurrentState(selectedSymbol) },
                     modifier = Modifier.fillMaxWidth().height(50.dp),
@@ -299,7 +307,7 @@ fun HomeScreen(viewModel: CryptoViewModel) {
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
-            // --- ACTION CONTROL CENTER (Leverage + Buttons) ---
+            // --- ACTION CONTROL CENTER ---
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -307,7 +315,6 @@ fun HomeScreen(viewModel: CryptoViewModel) {
                     .padding(16.dp)
             ) {
                 Column {
-                    // Kaldıraç Slider
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -330,12 +337,10 @@ fun HomeScreen(viewModel: CryptoViewModel) {
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Butonlar
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        // LONG Button
                         Button(
                             onClick = { viewModel.executeMarketTrade("BUY", analysis.tradeTp, analysis.tradeSl) },
                             modifier = Modifier.weight(1f).height(50.dp),
@@ -345,7 +350,6 @@ fun HomeScreen(viewModel: CryptoViewModel) {
                             Text("LONG 🚀", color = Color.Black, fontWeight = FontWeight.ExtraBold)
                         }
 
-                        // SHORT Button
                         Button(
                             onClick = { viewModel.executeMarketTrade("SELL", analysis.tradeTp, analysis.tradeSl) },
                             modifier = Modifier.weight(1f).height(50.dp),
@@ -358,7 +362,6 @@ fun HomeScreen(viewModel: CryptoViewModel) {
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Risk Bilgisi
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
                         Text(
                             text = "Risk: Kasa %1 (Otomatik) * Kaldıraç Miktarı",
@@ -369,7 +372,41 @@ fun HomeScreen(viewModel: CryptoViewModel) {
                 }
             }
 
-            Spacer(modifier = Modifier.height(80.dp)) // Bottom Nav için boşluk
+            Spacer(modifier = Modifier.height(80.dp))
         }
+    }
+}
+
+// --- GÜNCELLENMİŞ YARDIMCI BİLEŞEN: InfoColumn ---
+@Composable
+fun InfoColumn(
+    title: String,
+    value: String,
+    color: Color,
+    modifier: Modifier = Modifier // Modifier parametresi eklendi
+) {
+    Column(
+        modifier = modifier.padding(horizontal = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Top
+    ) {
+        Text(
+            text = title,
+            color = Color.Gray,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium
+        )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // Değer (Uzun metinler için ayarlar)
+        Text(
+            text = value,
+            color = color,
+            fontWeight = FontWeight.Bold,
+            fontSize = 15.sp, // Puntosunu hafif küçülttük
+            textAlign = TextAlign.Center, // Ortala
+            lineHeight = 18.sp // Satır arası boşluk
+        )
     }
 }
