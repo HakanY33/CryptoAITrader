@@ -1,7 +1,7 @@
 package com.example.cryptopredictionapp.data.api
 
 import com.example.cryptopredictionapp.data.model.AiResponse
-import com.example.cryptopredictionapp.data.model.MarketDataRequest
+import com.example.cryptopredictionapp.data.model.MarketDataRequest // <--- İŞTE EKSİK OLAN BU!
 import retrofit2.http.Body
 import retrofit2.http.POST
 

@@ -28,21 +28,20 @@ class AutoTraderViewModel : ViewModel() {
 
     private val repository = CryptoRepository()
 
-    // Piyasa Listeleri (Sürekli Güncel)
+    // Piyasa Listeleri
     private val _gainers = MutableStateFlow<List<BingxMarketItem>>(emptyList())
     val gainers: StateFlow<List<BingxMarketItem>> = _gainers.asStateFlow()
 
     private val _losers = MutableStateFlow<List<BingxMarketItem>>(emptyList())
     val losers: StateFlow<List<BingxMarketItem>> = _losers.asStateFlow()
 
-    // Fırsatlar
     private val _opportunities = MutableStateFlow<List<TradeOpportunity>>(emptyList())
     val opportunities: StateFlow<List<TradeOpportunity>> = _opportunities.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    private val _statusMessage = MutableStateFlow("Piyasa Canlı Takip Ediliyor...")
+    private val _statusMessage = MutableStateFlow("Piyasa Bekleniyor...")
     val statusMessage: StateFlow<String> = _statusMessage.asStateFlow()
 
     private var liveDataJob: Job? = null
@@ -51,12 +50,10 @@ class AutoTraderViewModel : ViewModel() {
         startLiveMarketData()
     }
 
-    // --- 1. CANLI VERİ AKIŞI (Arka Planda Sürekli Çalışır) ---
     private fun startLiveMarketData() {
         liveDataJob = viewModelScope.launch {
             while (isActive) {
                 try {
-                    // Limit artırıldı (repository içinde 20 olarak ayarlı)
                     val result = repository.fetchTopMovers(limit = 20)
                     if (result.isNotEmpty()) {
                         _gainers.value = result["GAINERS"] ?: emptyList()
@@ -65,125 +62,99 @@ class AutoTraderViewModel : ViewModel() {
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
-                delay(3000)
+                delay(5000) // 5 saniyede bir yenile (API kotasını koru)
             }
         }
     }
 
-    // --- 2. ANALİZ TETİKLEYİCİ (20 Fırsat Tarama) ---
     fun analyzeOpportunities() {
-        if (_gainers.value.isEmpty()) return
+        // Liste boşsa önce veri çekmeyi dene
+        if (_gainers.value.isEmpty()) {
+            _statusMessage.value = "Veri bekleniyor..."
+            return
+        }
 
         viewModelScope.launch {
             _isLoading.value = true
-            _statusMessage.value = "Fırsatlar Taranıyor..."
+            _opportunities.value = emptyList() // Listeyi temizle
 
             val foundOpps = mutableListOf<TradeOpportunity>()
-            // Daha geniş bir havuzdan seçim yap (İlk 10 Gainer + İlk 10 Loser)
-            val candidates = _gainers.value.take(10) + _losers.value.take(10)
+            // En çok yükselen ve düşenlerden karma bir havuz oluştur
+            val candidates = _gainers.value.take(15) + _losers.value.take(15)
 
             var processedCount = 0
             for (coin in candidates) {
                 processedCount++
-                _statusMessage.value = "Analiz: ${coin.symbol} ($processedCount/20)..."
+                _statusMessage.value = "Analiz: ${coin.symbol} ($processedCount/${candidates.size})"
 
                 try {
-                    // Hacim Filtresi
+                    // Hacim Filtresi (Düşük hacimli coinlerden uzak dur)
                     val volume = coin.quoteVolume?.toDoubleOrNull() ?: 0.0
-                    if (volume < 500_000) continue
+                    if (volume < 1_000_000) continue
 
-                    // Detaylı Mum Analizi
+                    // Mum Verilerini Çek
                     val candles = repository.getKlinesData(coin.symbol, "15m")
                     if (candles.size > 50) {
-                        val score = calculateScore(candles)
 
-                        if (score >= 2) {
-                            val price = coin.lastPrice?.toDoubleOrNull() ?: 0.0
-                            val isShort = coin.priceChangePercent?.contains("-") == true
-                            val type = if (isShort) "SHORT" else "LONG"
+                        val price = coin.lastPrice?.toDoubleOrNull() ?: 0.0
 
-                            val obText = TechnicalAnalysis.findOrderBlock(candles)
-                            val fvgText = TechnicalAnalysis.findFVG(candles)
+                        // İndikatör Hazırlığı
+                        val candlesReversed = candles.reversed()
+                        val closes = candlesReversed.map { BigDecimal(it.close) }
+                        val highs = candlesReversed.map { BigDecimal(it.high) }
+                        val lows = candlesReversed.map { BigDecimal(it.low) }
 
-                            val closes = candles.map { BigDecimal(it.close) }
-                            val highs = candles.map { BigDecimal(it.high) }
-                            val lows = candles.map { BigDecimal(it.low) }
-                            val atr = IndicatorUtils.calculateATR(highs, lows, closes)
+                        // ATR Hesapla
+                        val atr = IndicatorUtils.calculateATR(highs, lows, closes)
 
-                            var finalEntry = price
-                            var finalTp = price * 1.02
-                            var finalSl = price * 0.99
+                        if (atr != null && price > 0) {
+                            // --- YENİ HYBRID MOTOR ---
+                            val setup = TechnicalAnalysis.calculateHybridTradeSetup(
+                                candles = candles,
+                                currentPrice = BigDecimal(price),
+                                atr = atr
+                            )
 
-                            if (atr != null) {
-                                // --- DÜZELTME: Yeni "Hybrid Money Printer" Stratejisine Geçiş ---
-                                // Eski fonksiyon: calculateSmartTradeSetup(price, atr, type...) -> ARTIK YOK
-                                // Yeni fonksiyon: calculateHybridTradeSetup(candles, price, atr)
+                            val entryText = setup.first
 
-                                val setup = TechnicalAnalysis.calculateHybridTradeSetup(
-                                    candles,
-                                    BigDecimal(price),
-                                    atr
-                                )
+                            // Geçerli bir işlem bulduysa
+                            if (!entryText.contains("Bekle") &&
+                                !entryText.contains("Yetersiz") &&
+                                !entryText.contains("İşlem Yok")) {
 
-                                // Eğer strateji "İşlem Yok", "Bekle" veya "Veri Yetersiz" dediyse listeye ekleme
-                                val entryText = setup.first
-                                if (!entryText.contains("Bekle") && !entryText.contains("Yetersiz") && !entryText.contains("İşlem Yok")) {
+                                // String içinden fiyatları temizle
+                                val cleanEntry = entryText.split(" ").firstOrNull()?.replace(",", ".")?.toDoubleOrNull() ?: price
+                                val cleanTp = setup.second.replace(",", ".").toDoubleOrNull() ?: 0.0
+                                val cleanSl = setup.third.replace(",", ".").toDoubleOrNull() ?: 0.0
 
-                                    // String içinden saf fiyatı ayıklama (Örn: "65000.50 (Trend Desteği)" -> 65000.50)
-                                    // Parse işlemi basitçe boşluktan öncesini alır
-                                    val cleanEntry = entryText.split(" ").firstOrNull()?.replace(",", ".")?.toDoubleOrNull() ?: price
-                                    val cleanTp = setup.second.replace(",", ".").toDoubleOrNull() ?: 0.0
-                                    val cleanSl = setup.third.replace(",", ".").toDoubleOrNull() ?: 0.0
-
-                                    // Yönü (LONG/SHORT) Hedefe göre otomatik belirle
+                                // TP ve SL geçerliyse ekle
+                                if (cleanTp > 0 && cleanSl > 0) {
                                     val signalType = if (cleanTp > cleanEntry) "LONG" else "SHORT"
 
-                                    if (cleanTp > 0 && cleanSl > 0) {
-                                        foundOpps.add(
-                                            TradeOpportunity(
-                                                symbol = coin.symbol,
-                                                type = signalType,
-                                                entryPrice = cleanEntry,
-                                                takeProfit = cleanTp,
-                                                stopLoss = cleanSl,
-                                                score = 90 // Strateji onayladığı için yüksek skor
-                                            )
+                                    foundOpps.add(
+                                        TradeOpportunity(
+                                            symbol = coin.symbol,
+                                            type = signalType,
+                                            entryPrice = cleanEntry,
+                                            takeProfit = cleanTp,
+                                            stopLoss = cleanSl,
+                                            score = 85
                                         )
-                                    }
+                                    )
                                 }
-                            }
-
-                            if (price > 0) {
-                                foundOpps.add(TradeOpportunity(coin.symbol, type, finalEntry, finalTp, finalSl, score))
                             }
                         }
                     }
-                    delay(100) // API yükünü azaltmak için
-                } catch (e: Exception) { e.printStackTrace() }
+                    delay(150) // API Spam koruması
+                } catch (e: Exception) {
+                    println("Hata (${coin.symbol}): ${e.message}")
+                }
             }
 
             _opportunities.value = foundOpps
-            _statusMessage.value = if (foundOpps.isNotEmpty()) "✅ ${foundOpps.size} Fırsat Bulundu" else "Fırsat Bulunamadı"
+            _statusMessage.value = if (foundOpps.isNotEmpty()) "✅ ${foundOpps.size} Fırsat Bulundu" else "Fırsat Yok, Bekleniyor..."
             _isLoading.value = false
         }
-    }
-
-    private fun calculateScore(candles: List<com.example.cryptopredictionapp.data.model.BingxKlineData>): Int {
-        var score = 0
-        val closes = candles.map { BigDecimal(it.close) }
-        val ema21 = IndicatorUtils.calculateEMA(closes, 21)
-        val ema50 = IndicatorUtils.calculateEMA(closes, 50)
-        if (ema21 != null && ema50 != null) {
-            if (ema21 > ema50) score++
-            val rsi = IndicatorUtils.calculateRSI(closes)
-            if (rsi != null && rsi > BigDecimal(50)) score++
-        }
-        return score
-    }
-
-    private fun parsePrice(text: String): Double {
-        val cleanText = text.split(" ")[0].replace(",", ".")
-        return cleanText.toDoubleOrNull() ?: 0.0
     }
 
     override fun onCleared() {
@@ -197,21 +168,20 @@ class AutoTraderViewModel : ViewModel() {
 
     fun executeTrade(opp: TradeOpportunity) {
         viewModelScope.launch {
-            _tradeResult.value = "Kasa kontrol ediliyor ve işlem hesaplanıyor..."
+            _tradeResult.value = "İşlem iletiliyor..."
             val side = if (opp.type == "LONG") "BUY" else "SELL"
 
-            // GÜNCELLENMİŞ FONKSİYON (TP/SL DAHİL)
             val result = repository.placeSmartTrade(
                 symbol = opp.symbol,
                 side = side,
                 price = opp.entryPrice,
-                leverage = 20, // Otomatik avcıda varsayılan 20x
+                leverage = 20,
                 tpPrice = opp.takeProfit,
                 slPrice = opp.stopLoss
             )
             _tradeResult.value = result
 
-            delay(5000)
+            delay(4000)
             _tradeResult.value = null
         }
     }

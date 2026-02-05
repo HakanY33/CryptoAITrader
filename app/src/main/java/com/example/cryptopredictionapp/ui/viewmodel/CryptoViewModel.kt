@@ -2,8 +2,8 @@ package com.example.cryptopredictionapp.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.cryptopredictionapp.data.model.MarketDataRequest
 import com.example.cryptopredictionapp.data.repository.CryptoRepository
+import com.example.cryptopredictionapp.data.model.MarketDataRequest
 import com.example.cryptopredictionapp.util.IndicatorUtils
 import com.example.cryptopredictionapp.util.TechnicalAnalysis
 import kotlinx.coroutines.Job
@@ -367,4 +367,16 @@ class CryptoViewModel : ViewModel() {
             _isLoading.value = false
         }
     }
+
+    // --- DEMO MODU YÖNETİMİ ---
+    // Constants.kt dosyasındaki varsayılan değeri alarak başlar
+    private val _isDemoMode = MutableStateFlow(com.example.cryptopredictionapp.util.Constants.IS_DEMO_MODE)
+    val isDemoMode: StateFlow<Boolean> = _isDemoMode.asStateFlow()
+
+    fun toggleDemoMode(enabled: Boolean) {
+        _isDemoMode.value = enabled
+        // Global ayarı güncelle (Böylece API adresi değişir)
+        com.example.cryptopredictionapp.util.Constants.IS_DEMO_MODE = enabled
+    }
+
 }

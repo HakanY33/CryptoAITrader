@@ -72,8 +72,8 @@ fun MainScreen() {
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                NavIcon(Icons.Default.Home, "Analiz", currentScreen == "HOME", AcidGreen) { currentScreen = "HOME" }
-                NavIcon(Icons.Default.Search, "Avcı", currentScreen == "SCANNER", NeonMagenta) { currentScreen = "SCANNER" }
+                NavIcon(Icons.Default.Home, "Analiz", currentScreen == "HOME", NeonMagenta) { currentScreen = "HOME" }
+                NavIcon(Icons.Default.Search, "Avcı", currentScreen == "SCANNER", AcidGreen) { currentScreen = "SCANNER" }
             }
         }
     }

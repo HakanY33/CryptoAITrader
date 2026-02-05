@@ -17,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -138,7 +139,7 @@ fun HomeScreen(viewModel: CryptoViewModel) {
                                 .fillMaxWidth()
                                 .clickable { viewModel.onCoinSelected(coin) }
                                 .padding(12.dp),
-                            color = TextWhite,
+                            color = ElectricPurple,
                             fontWeight = FontWeight.Bold
                         )
                         Divider(color = GlassWhite.copy(alpha = 0.2f))
@@ -335,7 +336,49 @@ fun HomeScreen(viewModel: CryptoViewModel) {
                         )
                     )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    // 2. YENİ EKLENEN: DEMO / REAL MODU SEÇİCİ (Ortada)
+                    // Kaldıraç ile Butonlar arasına giren "Switch"
+                    val isDemo by viewModel.isDemoMode.collectAsState()
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(12.dp)) // Hafif zemin
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Sol Yazı (Real)
+                        Text(
+                            text = "REAL (USDT)",
+                            color = if (!isDemo) AcidGreen else TextGray.copy(alpha = 0.5f),
+                            fontWeight = if (!isDemo) FontWeight.Bold else FontWeight.Normal,
+                            fontSize = 12.sp
+                        )
+
+                        // Aç/Kapa Düğmesi
+                        Switch(
+                            checked = isDemo,
+                            onCheckedChange = { viewModel.toggleDemoMode(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = NeonMagenta.copy(alpha = 0.8f), // Demo (VST) Rengi
+                                uncheckedThumbColor = Color.White,
+                                uncheckedTrackColor = AcidGreen.copy(alpha = 0.8f) // Real (USDT) Rengi
+                            ),
+                            modifier = Modifier.scale(0.8f) // Biraz küçültelim, zarif dursun
+                        )
+
+                        // Sağ Yazı (Demo)
+                        Text(
+                            text = "DEMO (VST)",
+                            color = if (isDemo) NeonMagenta else TextGray.copy(alpha = 0.5f),
+                            fontWeight = if (isDemo) FontWeight.Bold else FontWeight.Normal,
+                            fontSize = 12.sp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
